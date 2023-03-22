@@ -2,16 +2,17 @@
  * @Author: anzaikk 599957546@qq.com
  * @Date: 2023-03-12 08:14:37
  * @LastEditors: anzaikk 599957546@qq.com
- * @LastEditTime: 2023-03-21 03:58:30
+ * @LastEditTime: 2023-03-23 00:22:38
  * @FilePath: /vue_learn/src/App.vue
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
 
 <template>
   <small>临时界面功能不完善，样式很丑</small>
-  <h2>匹配完之后点击下面的下载，下载成CSV文件</h2>
+  <h2>匹配完之后点击下面的下载，下载成Excel文件。上传有G.Unit的文件的时候G.Unit这个列名一定要写对，不要有空格符号</h2>
   <el-button round class="download" type="success" size="medium" @click="exportData">下载匹配好的数据</el-button>
   <el-button round class="downloadForce" type="warning" size="mini" @click="exportData('force')">强制下载数据</el-button>
+  <el-button round class="downloadForce" type="success" size="mini" @click="exportNotData()">下载完全不匹配的数据</el-button>
   <br>
   <br>
   <div class="upload-file">
@@ -54,12 +55,11 @@
 
 
   <div class="import-file-data">
-    <el-table :key="itemKey" height="2000px" :data="importTableData['tableData']" style="width: 100%"
+    <el-table :key="itemKey" height="1000" :data="importTableData['tableData']" style="width: 100%"
       :row-class-name="tableRowClassName">
-      <el-table-column type="index" label="No." :width="50" v-if="isShowEdit"> </el-table-column>
       <el-table-column v-for="(tableData, index) in showImportDataColumn['tableColumn']" :prop="tableData.prop"
         :label="tableData.label" :key="index" />
-      <el-table-column fixed="right" label="Operations" width="120" v-if="isShowEdit">
+      <el-table-column fixed="right" label="匹配最佳" width="120" v-if="isShowEdit">
         <template #default="scope">
           <el-button type="primary" @click="searchStandrdFile(scope)">去匹配最佳</el-button>
         </template>
@@ -79,7 +79,6 @@ import * as dfd from "danfojs/dist/danfojs-browser/src"
 let importTableData = reactive({ "tableData": [] })
 let standardFileData = reactive({ "tableData": [] })
 let showImportDataColumn = reactive({ "tableColumn": [] })
-let isShowEdit = ref(false)
 let itemKey = ref(false)
 let loading = ref(false)
 let dialogTableVisible = ref(false)
@@ -88,38 +87,38 @@ let originData = reactive({ "data": [] })
 let allCatagotry = ref([])
 let resembleDataWidth = reactive(["6%", "40%", "8%", "4%", "4%", "18%", "10%"])
 let curChangeIndex = ref(0)
+let isShowEdit = ref(false)
 
 const exportData = (exportType) => {
-  if(exportType == "force"){
+  if (importTableData["tableData"].length == 0 || standardFileData["tableData"].length == 0) {
+    fileTypeError("download_error", "经过究极检测，没有上传数据，不能匹配到完全不同的数据")
+    return
+  }
+  if (exportType == "force") {
     let df = new dfd.DataFrame(importTableData["tableData"])
-    dfd.toCSV(df, { fileName: "force_export_data.csv", download: true});
-  }else{
-    let i =1
+    dfd.toExcel(df, { fileName: "force_export_data.xlsx", download: true });
+  } else {
+    let i = 1
     let flag = 1
-    for(let data of importTableData["tableData"]){
-      if(data["G.Unit"] == ""){
+    for (let data of importTableData["tableData"]) {
+      if (data["G.Unit"] == "") {
         flag = 0
         break
       }
-      i ++
+      i++
     }
-    if (importTableData["tableData"].length ==0){
-      let message = "经过究极检测，没有上传文件就点下载了"
-      fileTypeError("download_error", message)
-      return
-    }
-    if(flag == 1 ){
+    if (flag == 1) {
       let df = new dfd.DataFrame(importTableData["tableData"])
-      dfd.toCSV(df, { fileName: "force_export_data.csv", download: true});
-    }else{
-      let message = "经过究极检测，发现第" + i +"条数据的税还没填，加油"
+      dfd.toExcel(df, { fileName: "force_export_data.xlsx", download: true });
+    } else {
+      let message = "经过究极检测，发现第" + i + "条数据的税还没填，加油"
       fileTypeError("download_error", message)
     }
   }
 }
 
 const tableRowClassName = (row, rowIndex) => {
-  if (row.row["G.Unit"] != "") {
+  if (row.row["G.Unit"] != "" && row.row["G.Unit"] != "-") {
     return 'success-row'
   } else {
     return ""
@@ -133,10 +132,23 @@ const bestData = (rowData) => {
 const searchStandrdFile = (rowData) => {
   curChangeIndex = rowData.$index
   dialogTableVisible.value = true
-  originData["data"] = [rowData.row]
+  let temp_data = {
+    "Description of goods": rowData.row["Description of goods"],
+    "subdivision-unit/ subdivision": rowData.row["subdivision-unit/ subdivision"],
+    "subdivision-lower bound": rowData.row["subdivision-lower bound"],
+    "subdivision-upper bound": rowData.row["subdivision-upper bound"],
+    "Category": rowData.row["Category"],
+    "G.Unit": rowData.row["G.Unit"]
+  }
+  originData["data"] = [temp_data]
   let cur_category = rowData.row["Category"]
   let desOfGoods = rowData.row["Description of goods"]
+  let temp = couData(cur_category, desOfGoods)
+  resembleData["data"] = temp.slice(0, 6)
+}
 
+
+const couData = (cur_category, desOfGoods) => {
   //比较相似度
   let cur_category_standard = ""
   let max_sample = 0
@@ -148,19 +160,46 @@ const searchStandrdFile = (rowData) => {
     }
   }
 
-  //获取当前分类的所有
-  let curResembleData = standardFileData["tableData"].query(standardFileData["tableData"]["Category"].eq(cur_category_standard))
+  let temp = []
+  if (max_sample > 0.31) {
+    //获取当前分类的所有
+    let curResembleData = standardFileData["tableData"].query(standardFileData["tableData"]["Category"].eq(cur_category_standard))
 
-  //比较Name of Article与Description of goods
-  curResembleData = curResembleData.addColumn("相似度", curResembleData["Name of Article"].apply((x) => {
-    return new difflib.SequenceMatcher(null, x, desOfGoods).ratio()
-  }))
-  //排序
-  curResembleData = curResembleData.sortValues("相似度", { ascending: false })
+    //比较Name of Article与Description of goods
+    curResembleData = curResembleData.addColumn("相似度", curResembleData["Name of Article"].apply((x) => {
+      return new difflib.SequenceMatcher(null, x, desOfGoods).ratio()
+    }))
+    //排序
+    curResembleData = curResembleData.sortValues("相似度", { ascending: false })
 
-  //装成json渲染出来
-  let temp = dfd.toJSON(curResembleData, { "format": "records" })
-  resembleData["data"] = temp.slice(0, 6)
+    //装成json渲染出来
+    temp = dfd.toJSON(curResembleData, { "format": "records" })
+  }
+
+
+  return temp
+}
+
+const exportNotData = () => {
+  let resData = []
+  if (importTableData["tableData"].length == 0 || standardFileData["tableData"].length == 0) {
+    fileTypeError("download_error", "经过究极检测，没有上传数据，不能匹配到完全不同的数据")
+  }
+  for (let each_data of importTableData["tableData"]) {
+    const cur_category = each_data["Category"]
+    const desOfGoods = each_data["Description of goods"]
+    const data = couData(cur_category, desOfGoods)
+    if (data.length == 0) {
+      resData.push(each_data)
+    }
+  }
+  if (resData.length != 0) {
+    let df = new dfd.DataFrame(resData)
+    dfd.toExcel(df, { fileName: "all_no_data.xlsx", download: true });
+  } else {
+    let message = "没有完全不同的数据"
+    fileTypeError("no_data", message)
+  }
 }
 
 const uploadImportFile = async (file) => {
@@ -174,7 +213,9 @@ const uploadImportFile = async (file) => {
     }
     importTableData["tableData"] = dfd.toJSON(df, { "format": "records" })
     for (let i in importTableData["tableData"]) {
-      importTableData["tableData"][i]["G.Unit"] = ""
+      if (!("G.Unit" in importTableData["tableData"][i])) {
+        importTableData["tableData"][i]["G.Unit"] = ""
+      }
     }
     itemKey.value = !itemKey
     //动态显示所有数据
@@ -183,7 +224,7 @@ const uploadImportFile = async (file) => {
     isShowEdit.value = true
     loading.value = false
   } else {
-    fileTypeError()
+    fileTypeError("file_error", "")
   }
 }
 
@@ -203,16 +244,20 @@ const standardFile = async (file) => {
   }
 }
 
-const fileTypeError = (e,message) => {
+const fileTypeError = (e, message) => {
   let title, type
-  if(e == "file_error"){
-    title = 'Error'
-    message = '不会吧，不会吧，这个上传的文件不是csv和excel?'
+  if (e == "file_error") {
+    title = "Error"
+    message = "不会吧，不会吧，这个上传的文件不是csv和excel?"
     type = "error"
-  }else if(e== ""){
+  } else if (e == "download_error") {
     title = 'Error'
     message = message
     type = "error"
+  } else if (e == "no_data") {
+    title = 'Warning'
+    message = message
+    type = "warning"
   }
   ElNotification({
     title: title,
@@ -296,6 +341,11 @@ body {
   color: white;
 }
 
+.success-row:hover {
+  color: black;
+}
+
 .dialog-footer button:first-child {
   margin-right: 10px;
-}</style>
+}
+</style>
